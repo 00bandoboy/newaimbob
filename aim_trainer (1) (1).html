@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Aim Trainer</title>
+<style>
+  *{box-sizing:border-box}
+  body{margin:0;background:#080b12;color:#eef2ff;font-family:Inter,system-ui,Arial,sans-serif;overflow:hidden}
+  .app{height:100vh;display:flex;flex-direction:column}
+  header{height:76px;display:flex;align-items:center;justify-content:space-between;padding:0 24px;border-bottom:1px solid #202637;background:#0d111b}
+  .logo{font-weight:900;font-size:22px;letter-spacing:.5px}
+  .logo span{color:#62e6a7}
+  .stats{display:flex;gap:24px}
+  .stat{text-align:center;min-width:70px}
+  .stat b{display:block;font-size:20px}
+  .stat small{color:#8993a8;text-transform:uppercase;font-size:10px;letter-spacing:1px}
+  .controls{display:flex;gap:10px;align-items:center}
+  select,button{background:#151b28;color:#eef2ff;border:1px solid #2a3449;border-radius:9px;padding:9px 12px;font-weight:700}
+  button{cursor:pointer}
+  button:hover{border-color:#62e6a7}
+  .main{flex:1;display:flex;min-height:0}
+  aside{width:220px;border-right:1px solid #202637;background:#0b0f17;padding:20px}
+  aside h3{margin:0 0 14px;font-size:12px;color:#7f8aa0;text-transform:uppercase;letter-spacing:1.5px}
+  .mode{width:100%;text-align:left;margin-bottom:8px}
+  .mode.active{background:#123326;border-color:#62e6a7;color:#62e6a7}
+  .hint{margin-top:24px;color:#78839a;font-size:12px;line-height:1.6}
+  #arena{position:relative;flex:1;background:
+    radial-gradient(circle at center,rgba(44,58,83,.17),transparent 45%),
+    linear-gradient(rgba(255,255,255,.025) 1px,transparent 1px),
+    linear-gradient(90deg,rgba(255,255,255,.025) 1px,transparent 1px);
+    background-size:auto,40px 40px,40px 40px;cursor:crosshair;overflow:hidden}
+  .target{position:absolute;border-radius:50%;background:#ff4f6d;border:4px solid #fff;box-shadow:0 0 0 5px rgba(255,79,109,.25),0 8px 25px rgba(0,0,0,.4);transform:translate(-50%,-50%);animation:pop .12s ease-out}
+  .target:after{content:"";position:absolute;inset:24%;border-radius:50%;background:#fff}
+  @keyframes pop{from{transform:translate(-50%,-50%) scale(.5);opacity:.2}to{transform:translate(-50%,-50%) scale(1);opacity:1}}
+  .overlay{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(5,8,13,.65);backdrop-filter:blur(3px)}
+  .card{width:min(440px,90%);text-align:center;background:#101621;border:1px solid #2a3449;border-radius:18px;padding:34px;box-shadow:0 25px 70px #0008}
+  .card h1{margin:0 0 8px;font-size:34px}
+  .card p{color:#8e99ad;margin:0 0 24px}
+  .start{background:#62e6a7;color:#07110c;border:0;padding:13px 26px;font-size:15px}
+  .result{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:22px 0}
+  .result div{padding:15px;background:#0b1018;border-radius:10px}
+  .result b{font-size:23px;display:block}.result span{color:#7f8aa0;font-size:11px;text-transform:uppercase}
+  .footer{position:absolute;bottom:12px;left:50%;transform:translateX(-50%);color:#59647a;font-size:11px;pointer-events:none}
+</style>
+</head>
+<body>
+<div class="app">
+<header>
+  <div class="logo">AIM<span>LAB</span></div>
+  <div class="stats">
+    <div class="stat"><b id="score">0</b><small>Score</small></div>
+    <div class="stat"><b id="hits">0</b><small>Hits</small></div>
+    <div class="stat"><b id="accuracy">100%</b><small>Accuracy</small></div>
+    <div class="stat"><b id="time">30.0</b><small>Time</small></div>
+  </div>
+  <div class="controls">
+    <select id="duration"><option value="15">15 sec</option><option value="30" selected>30 sec</option><option value="60">60 sec</option></select>
+    <button id="reset">Reset</button>
+  </div>
+</header>
+<div class="main">
+<aside>
+  <h3>Training</h3>
+  <button class="mode active" data-mode="classic">Classic</button>
+  <button class="mode" data-mode="precision">Precision</button>
+  <button class="mode" data-mode="speed">Speed</button>
+  <div class="hint">
+    <b>How to play</b><br><br>
+    Click every target as quickly as you can. Misses reduce accuracy. Your average reaction time is tracked automatically.
+  </div>
+</aside>
+<div id="arena">
+  <div class="overlay" id="overlay">
+    <div class="card" id="card">
+      <h1>Aim Trainer</h1>
+      <p>Warm up your aim and test your reaction speed.</p>
+      <button class="start" id="start">START TRAINING</button>
+    </div>
+  </div>
+  <div class="footer">Click targets • Esc to end run</div>
+</div>
+</div>
+</div>
+
+<script>
+const arena=document.getElementById('arena'), overlay=document.getElementById('overlay');
+const scoreEl=document.getElementById('score'),hitsEl=document.getElementById('hits');
+const accEl=document.getElementById('accuracy'),timeEl=document.getElementById('time');
+const durationEl=document.getElementById('duration');
+let running=false,score=0,hits=0,shots=0,startTime=0,targetTime=0,elapsedTimer=null;
+let mode='classic', reactions=[];
+
+function sizeForMode(){
+  if(mode==='precision') return 26 + Math.random()*8;
+  if(mode==='speed') return 48 + Math.random()*12;
+  return 34 + Math.random()*16;
+}
+function spawn(){
+  document.querySelectorAll('.target').forEach(t=>t.remove());
+  if(!running)return;
+  const rect=arena.getBoundingClientRect(), s=sizeForMode();
+  const x=25+s/2+Math.random()*(rect.width-50-s);
+  const y=25+s/2+Math.random()*(rect.height-70-s);
+  const t=document.createElement('div');
+  t.className='target';
+  t.style.width=s+'px'; t.style.height=s+'px';
+  t.style.left=x+'px'; t.style.top=y+'px';
+  t.addEventListener('click',e=>{
+    e.stopPropagation();
+    if(!running)return;
+    const rt=performance.now()-targetTime;
+    reactions.push(rt);
+    hits++; shots++;
+    let mult=mode==='precision'?1.35:mode==='speed'?.85:1;
+    score += Math.round((1000/Math.max(rt,80))*100*mult);
+    update();
+    spawn();
+  });
+  arena.appendChild(t);
+  targetTime=performance.now();
+}
+function update(){
+  const accuracy=shots?Math.round(hits/shots*100):100;
+  scoreEl.textContent=score.toLocaleString();
+  hitsEl.textContent=hits;
+  accEl.textContent=accuracy+'%';
+}
+function start(){
+  score=hits=shots=0; reactions=[]; running=true; startTime=performance.now();
+  update(); overlay.style.display='none';
+  durationEl.disabled=true;
+  spawn();
+  clearInterval(elapsedTimer);
+  elapsedTimer=setInterval(()=>{
+    const left=Math.max(0,+durationEl.value-(performance.now()-startTime)/1000);
+    timeEl.textContent=left.toFixed(1);
+    if(left<=0) end();
+  },50);
+}
+function end(){
+  if(!running)return;
+  running=false; clearInterval(elapsedTimer);
+  document.querySelectorAll('.target').forEach(t=>t.remove());
+  durationEl.disabled=false;
+  const accuracy=shots?Math.round(hits/shots*100):0;
+  const avg=reactions.length?Math.round(reactions.reduce((a,b)=>a+b,0)/reactions.length):0;
+  overlay.style.display='flex';
+  document.getElementById('card').innerHTML=`
+    <h1>Run Complete</h1><p>Nice work. Here's your result.</p>
+    <div class="result">
+      <div><b>${score.toLocaleString()}</b><span>Score</span></div>
+      <div><b>${accuracy}%</b><span>Accuracy</span></div>
+      <div><b>${avg} ms</b><span>Avg Reaction</span></div>
+      <div><b>${hits}</b><span>Targets Hit</span></div>
+    </div>
+    <button class="start" id="again">TRAIN AGAIN</button>`;
+  document.getElementById('again').onclick=start;
+}
+arena.addEventListener('click',()=>{if(running){shots++;update()}});
+document.getElementById('start').onclick=start;
+document.getElementById('reset').onclick=()=>{
+  running=false;clearInterval(elapsedTimer);durationEl.disabled=false;
+  document.querySelectorAll('.target').forEach(t=>t.remove());timeEl.textContent=durationEl.value+'.0';
+  overlay.style.display='flex';
+  document.getElementById('card').innerHTML='<h1>Aim Trainer</h1><p>Warm up your aim and test your reaction speed.</p><button class="start" id="start">START TRAINING</button>';
+  document.getElementById('start').onclick=start;
+};
+document.querySelectorAll('.mode').forEach(btn=>btn.onclick=()=>{
+  document.querySelectorAll('.mode').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');mode=btn.dataset.mode;
+});
+document.addEventListener('keydown',e=>{if(e.key==='Escape'&&running)end()});
+timeEl.textContent=durationEl.value+'.0';
+</script>
+</body>
+</html>
